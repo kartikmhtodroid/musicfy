@@ -33,7 +33,7 @@ button:hover{opacity:0.9}
 .controls{display:flex;gap:12px;font-size:1.2rem;cursor:pointer}
 
 /* Hidden YouTube Player Iframe Container */
-#iframe-holder{width:0;height:0;opacity:0;pointer-events:none;position:absolute}
+#iframe-holder{width:1px;height:1px;opacity:0.01;position:absolute;left:-9999px}
 </style>
 </head>
 <body>
@@ -56,8 +56,10 @@ button:hover{opacity:0.9}
   <!-- Dynamic Search Results Render Here -->
 </div>
 
-<!-- Player Area -->
-<div id="iframe-holder"></div>
+<!-- Permanent YouTube API Player Container -->
+<div id="iframe-holder">
+  <div id="ytPlayerContainer"></div>
+</div>
 
 <div class="bottom-player">
   <div style="font-size:1.5rem">🎵</div>
@@ -72,37 +74,69 @@ button:hover{opacity:0.9}
   </div>
 </div>
 
+<!-- Load YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <script>
-  // Insert your valid YouTube Data API v3 key here:
- 
-  // Insert your valid YouTube Data API v3 key here:
   const API_KEY = "AIzaSyBkAnYKjRoxzHAdjtIzSbxRfvlIeJO9sfw";
 
   const searchForm = document.getElementById('searchForm');
   const searchInput = document.getElementById('searchInput');
   const resultsGrid = document.getElementById('resultsGrid');
   const nowPlayingText = document.getElementById('nowPlayingText');
-  const iframeHolder = document.getElementById('iframe-holder');
   const playPauseBtn = document.getElementById('playPauseBtn');
   const progressBar = document.getElementById('progressBar');
 
   let currentTracks = [];
   let currentIndex = -1;
   let isPlaying = false;
+  let player = null;
+  let isPlayerReady = false;
 
-  // Search Submit Handler
+  // Initialize YouTube Player API
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('ytPlayerContainer', {
+      height: '200',
+      width: '200',
+      playerVars: {
+        'autoplay': 1,
+        'controls': 0,
+        'playsinline': 1
+      },
+      events: {
+        'onReady': () => { isPlayerReady = true; },
+        'onStateChange': onPlayerStateChange
+      }
+    });
+  }
+
+  function onPlayerStateChange(event) {
+    if (event.data === YT.PlayerState.PLAYING) {
+      isPlaying = true;
+      playPauseBtn.innerText = "⏸️";
+      progressBar.style.width = "100%";
+    } else if (event.data === YT.PlayerState.PAUSED) {
+      isPlaying = false;
+      playPauseBtn.innerText = "▶️";
+    } else if (event.data === YT.PlayerState.ENDED) {
+      // Auto-play next track when current ends
+      if (currentTracks.length > 0) {
+        playTrack((currentIndex + 1) % currentTracks.length);
+      }
+    }
+  }
+
   searchForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const query = searchInput.value.trim();
     if (query) fetchSongs(query);
   });
 
-  // Fetch YouTube Videos
   async function fetchSongs(query) {
     resultsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;">Searching tracks...</div>';
     
     try {
-      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=12&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}`;
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=25&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}`;
       const res = await fetch(url);
       const data = await res.json();
 
@@ -124,7 +158,6 @@ button:hover{opacity:0.9}
     }
   }
 
-  // Render Track Cards
   function renderGrid() {
     resultsGrid.innerHTML = '';
     currentTracks.forEach((item, index) => {
@@ -143,9 +176,8 @@ button:hover{opacity:0.9}
     });
   }
 
-  // Play Specific Track by Index
   function playTrack(index) {
-    if (index < 0 || index >= currentTracks.length) return;
+    if (index < 0 || index >= currentTracks.length || !isPlayerReady) return;
     
     currentIndex = index;
     const track = currentTracks[index];
@@ -155,14 +187,12 @@ button:hover{opacity:0.9}
 
     nowPlayingText.innerText = `Now Playing: ${title}`;
     
-    // Embed YouTube autoplay player
-    iframeHolder.innerHTML = `<iframe id="ytPlayer" width="200" height="200" src="https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1" allow="autoplay"></iframe>`;
-    
+    // Load and play video directly using official API instance
+    player.loadVideoById(videoId);
     isPlaying = true;
     playPauseBtn.innerText = "⏸️";
-    progressBar.style.width = "100%";
 
-    // Enable Media Session API
+    // Setup MediaSession for lock screen metadata & controls
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: title,
@@ -171,17 +201,11 @@ button:hover{opacity:0.9}
       });
 
       navigator.mediaSession.setActionHandler('play', () => {
-        isPlaying = true;
-        playPauseBtn.innerText = "⏸️";
-        const iframe = document.getElementById('ytPlayer');
-        if (iframe) iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
+        if (player) player.playVideo();
       });
 
       navigator.mediaSession.setActionHandler('pause', () => {
-        isPlaying = false;
-        playPauseBtn.innerText = "▶️";
-        const iframe = document.getElementById('ytPlayer');
-        if (iframe) iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
+        if (player) player.pauseVideo();
       });
 
       navigator.mediaSession.setActionHandler('nexttrack', () => {
@@ -194,16 +218,12 @@ button:hover{opacity:0.9}
     }
   }
 
-  // Control Listeners
   playPauseBtn.addEventListener('click', () => {
-    if (currentIndex === -1) return;
-    isPlaying = !isPlaying;
-    playPauseBtn.innerText = isPlaying ? "⏸️" : "▶️";
-    
-    const iframe = document.getElementById('ytPlayer');
-    if (iframe) {
-      const action = isPlaying ? 'playVideo' : 'pauseVideo';
-      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: action }), '*');
+    if (currentIndex === -1 || !player) return;
+    if (isPlaying) {
+      player.pauseVideo();
+    } else {
+      player.playVideo();
     }
   });
 
@@ -215,7 +235,6 @@ button:hover{opacity:0.9}
     if (currentTracks.length > 0) playTrack((currentIndex - 1 + currentTracks.length) % currentTracks.length);
   });
 
-  // Initial fetch on page load
   fetchSongs(searchInput.value);
 </script>
 </body>
