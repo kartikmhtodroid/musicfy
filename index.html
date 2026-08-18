@@ -74,6 +74,8 @@ button:hover{opacity:0.9}
 
 <script>
   // Insert your valid YouTube Data API v3 key here:
+ 
+  // Insert your valid YouTube Data API v3 key here:
   const API_KEY = "AIzaSyBkAnYKjRoxzHAdjtIzSbxRfvlIeJO9sfw";
 
   const searchForm = document.getElementById('searchForm');
@@ -149,6 +151,7 @@ button:hover{opacity:0.9}
     const track = currentTracks[index];
     const videoId = track.id.videoId;
     const title = track.snippet.title;
+    const thumbnail = track.snippet.thumbnails.high?.url || track.snippet.thumbnails.medium?.url;
 
     nowPlayingText.innerText = `Now Playing: ${title}`;
     
@@ -158,6 +161,37 @@ button:hover{opacity:0.9}
     isPlaying = true;
     playPauseBtn.innerText = "⏸️";
     progressBar.style.width = "100%";
+
+    // Enable Media Session API
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: track.snippet.channelTitle || 'Musicify Pro',
+        artwork: [{ src: thumbnail, sizes: '512x512', type: 'image/jpeg' }]
+      });
+
+      navigator.mediaSession.setActionHandler('play', () => {
+        isPlaying = true;
+        playPauseBtn.innerText = "⏸️";
+        const iframe = document.getElementById('ytPlayer');
+        if (iframe) iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+        isPlaying = false;
+        playPauseBtn.innerText = "▶️";
+        const iframe = document.getElementById('ytPlayer');
+        if (iframe) iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        if (currentTracks.length > 0) playTrack((currentIndex + 1) % currentTracks.length);
+      });
+
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        if (currentTracks.length > 0) playTrack((currentIndex - 1 + currentTracks.length) % currentTracks.length);
+      });
+    }
   }
 
   // Control Listeners
