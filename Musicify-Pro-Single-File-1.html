@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Musicify Pro</title>
+<style>
+:root{
+  --primary:#0A2342;--secondary:#13315C;--accent:#4EA8DE;
+  --bg:#050816;--card:#0f172a;--text:#fff;
+}
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif}
+body{background:linear-gradient(180deg,#050816,#0A2342);color:#fff;min-height:100vh;padding-bottom:120px}
+header{padding:16px;position:sticky;top:0;background:rgba(5,8,22,.9);backdrop-filter:blur(10px);z-index:100}
+.search{display:flex;gap:10px;max-width:900px;margin:auto}
+input{flex:1;padding:14px;border:none;border-radius:16px;background:#111827;color:white;outline:none;font-size:1rem}
+button{padding:14px 22px;border:none;border-radius:16px;background:var(--accent);font-weight:bold;cursor:pointer;color:#000;transition:opacity 0.2s}
+button:hover{opacity:0.9}
+.hero{padding:24px;max-width:1200px;margin:auto}
+.banner{background:linear-gradient(135deg,#13315C,#4EA8DE);padding:28px;border-radius:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;padding:20px;max-width:1200px;margin:auto}
+.card{background:rgba(255,255,255,.06);backdrop-filter:blur(12px);border-radius:20px;overflow:hidden;cursor:pointer;transition:transform 0.2s, background-color 0.2s}
+.card:hover{transform:scale(1.02);background:rgba(255,255,255,.12)}
+.card img{width:100%;aspect-ratio:1/1;object-fit:cover}
+.card div{padding:12px;font-size:0.95rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Bottom Audio Player */
+.bottom-player{position:fixed;left:0;right:0;bottom:0;background:#08101f;padding:16px;display:flex;align-items:center;gap:16px;z-index:100;border-top:1px solid rgba(255,255,255,0.1)}
+.player-info{flex:1;overflow:hidden}
+.player-title{font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.progress{height:4px;background:#333;border-radius:10px;margin-top:8px;position:relative;overflow:hidden}
+.progress span{display:block;height:100%;width:0%;background:var(--accent);transition:width 0.3s linear}
+.controls{display:flex;gap:12px;font-size:1.2rem;cursor:pointer}
+
+/* Hidden YouTube Player Iframe Container */
+#iframe-holder{width:0;height:0;opacity:0;pointer-events:none;position:absolute}
+</style>
+</head>
+<body>
+
+<header>
+  <form class="search" id="searchForm">
+    <input type="text" id="searchInput" placeholder="Search song or artist..." value="arijit singh" required>
+    <button type="submit" id="searchBtn">Search</button>
+  </form>
+</header>
+
+<div class="hero">
+  <div class="banner">
+    <h1>🎵 Musicify Pro</h1>
+    <p>Modern Navy Blue Music Player</p>
+  </div>
+</div>
+
+<div class="grid" id="resultsGrid">
+  <!-- Dynamic Search Results Render Here -->
+</div>
+
+<!-- Player Area -->
+<div id="iframe-holder"></div>
+
+<div class="bottom-player">
+  <div style="font-size:1.5rem">🎵</div>
+  <div class="player-info">
+    <div id="nowPlayingText" class="player-title">Select a track to play</div>
+    <div class="progress"><span id="progressBar"></span></div>
+  </div>
+  <div class="controls">
+    <span id="prevBtn">⏮️</span>
+    <span id="playPauseBtn">▶️</span>
+    <span id="nextBtn">⏭️</span>
+  </div>
+</div>
+
+<script>
+  // Insert your valid YouTube Data API v3 key here:
+  const API_KEY = "AIzaSyBkAnYKjRoxzHAdjtIzSbxRfvlIeJO9sfw";
+
+  const searchForm = document.getElementById('searchForm');
+  const searchInput = document.getElementById('searchInput');
+  const resultsGrid = document.getElementById('resultsGrid');
+  const nowPlayingText = document.getElementById('nowPlayingText');
+  const iframeHolder = document.getElementById('iframe-holder');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const progressBar = document.getElementById('progressBar');
+
+  let currentTracks = [];
+  let currentIndex = -1;
+  let isPlaying = false;
+
+  // Search Submit Handler
+  searchForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const query = searchInput.value.trim();
+    if (query) fetchSongs(query);
+  });
+
+  // Fetch YouTube Videos
+  async function fetchSongs(query) {
+    resultsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;">Searching tracks...</div>';
+    
+    try {
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=12&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) {
+        resultsGrid.innerHTML = `<div style="grid-column:1/-1;color:#ff6b6b;text-align:center;">API Error: ${data.error.message}</div>`;
+        return;
+      }
+
+      currentTracks = data.items || [];
+
+      if (currentTracks.length === 0) {
+        resultsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;">No results found.</div>';
+        return;
+      }
+
+      renderGrid();
+    } catch (err) {
+      resultsGrid.innerHTML = '<div style="grid-column:1/-1;color:#ff6b6b;text-align:center;">Failed to connect to API.</div>';
+    }
+  }
+
+  // Render Track Cards
+  function renderGrid() {
+    resultsGrid.innerHTML = '';
+    currentTracks.forEach((item, index) => {
+      const title = item.snippet.title;
+      const thumbnail = item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url;
+      
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `<img src="${thumbnail}" alt="Track Cover"><div>${title}</div>`;
+      
+      card.addEventListener('click', () => {
+        playTrack(index);
+      });
+
+      resultsGrid.appendChild(card);
+    });
+  }
+
+  // Play Specific Track by Index
+  function playTrack(index) {
+    if (index < 0 || index >= currentTracks.length) return;
+    
+    currentIndex = index;
+    const track = currentTracks[index];
+    const videoId = track.id.videoId;
+    const title = track.snippet.title;
+
+    nowPlayingText.innerText = `Now Playing: ${title}`;
+    
+    // Embed YouTube autoplay player
+    iframeHolder.innerHTML = `<iframe id="ytPlayer" width="200" height="200" src="https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1" allow="autoplay"></iframe>`;
+    
+    isPlaying = true;
+    playPauseBtn.innerText = "⏸️";
+    progressBar.style.width = "100%";
+  }
+
+  // Control Listeners
+  playPauseBtn.addEventListener('click', () => {
+    if (currentIndex === -1) return;
+    isPlaying = !isPlaying;
+    playPauseBtn.innerText = isPlaying ? "⏸️" : "▶️";
+    
+    const iframe = document.getElementById('ytPlayer');
+    if (iframe) {
+      const action = isPlaying ? 'playVideo' : 'pauseVideo';
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: action }), '*');
+    }
+  });
+
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    if (currentTracks.length > 0) playTrack((currentIndex + 1) % currentTracks.length);
+  });
+
+  document.getElementById('prevBtn').addEventListener('click', () => {
+    if (currentTracks.length > 0) playTrack((currentIndex - 1 + currentTracks.length) % currentTracks.length);
+  });
+
+  // Initial fetch on page load
+  fetchSongs(searchInput.value);
+</script>
+</body>
+</html>
